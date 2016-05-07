@@ -1,0 +1,181 @@
+Did you know the <a href="https://stat.ethz.ch/R-manual/R-devel/library/datasets/html/00Index.html">R datasets package</a> can be accessed in Python using the <a href="http://statsmodels.sourceforge.net/">statsmodels library</a>? Today we'll look at the <a href="https://stat.ethz.ch/R-manual/R-devel/library/datasets/html/esoph.html">esoph dataset</a> that contains records for 88 age/alcohol/tobacco combinations based on an esophageal cancer study in France.
+
+First we need to load the data.
+
+[code language="python"]
+import statsmodels.api as sm
+import pandas as pd
+
+esoph = sm.datasets.get_rdataset('esoph')
+print(type(esoph))
+
+df = esoph.data
+# Rename a column
+df.columns = ['Age_group']+list(df.columns[1:])
+df.head()
+[/code]
+<blockquote>&lt;class 'statsmodels.datasets.utils.Dataset'&gt;</blockquote>
+<img class="  wp-image-1746 alignnone" src="https://galeascience.files.wordpress.com/2016/05/df_pre_clean.png" alt="df_pre_clean" width="458" height="224" />
+
+After cleaning the data (which can be seen along with the full code in <a href="https://github.com/agalea91/esoph_linear_model/blob/master/esoph_linear_model.ipynb">my ipython notebook</a>), it ended up looking like this:
+
+<img class="  wp-image-1745 aligncenter" src="https://galeascience.files.wordpress.com/2016/05/df_post_clean.png" alt="df_post_clean" width="580" height="204" />
+
+Here we're only seeing the first 5 elements i.e., df.head(). The features have been converted to dummy variables representing the different groups.
+
+&nbsp;
+<h2>At a glance</h2>
+A new column has been added called "positive_frac" which was found by calculating ncases/ncontrols for each row. It is the percentage of each age/alcohol/tobacco group that was diagnosed positive for esophagus cancer and we're going to create linear models in an attempt to predict it. Let's get some quick statistics about it:
+
+[code language="python"]
+df.describe()['positive_frac']
+[/code]
+<blockquote>count 88.000000
+mean 0.346807
+std      0.357342
+min    0.000000
+25%    0.000000
+50%    0.267857
+75%    0.583333
+max    1.000000
+Name: positive_frac, dtype: float64</blockquote>
+So it can range from 0% to 100% of the group with an average of ~35% being diagnosed positive. Let's take a look at how this is distributed depending on the age group using Seaborn's FacetGrid() object to plot a set of histograms.
+
+[code language="python"]
+import seaborn as sns
+colors = sns.color_palette(&quot;BrBG&quot;, 10)
+
+g = sns.FacetGrid(df, row='Age_group', size=2,
+                  aspect=4, legend_out=False)
+
+g.map(plt.hist, 'positive_frac', normed=True,
+      color=colors[3])
+[/code]
+
+&nbsp;
+
+<img class="  wp-image-1747 aligncenter" src="https://galeascience.files.wordpress.com/2016/05/hist_by_age.png?w=1700" alt="hist_by_age" width="482" height="770" />
+
+As could be expected, the younger groups are less likely to be diagnosed positive.
+
+&nbsp;
+<h2>One feature models</h2>
+There is clearly a trend of higher percentages for older age groups, let's take a different look:
+
+[code language="python"]
+sns.set_style('ticks')
+sns.regplot(y='positive_frac', x='Age_group_i', data=df,
+            fit_reg = True, marker='o', color=colors[1])
+[/code]
+
+&nbsp;
+
+<img class=" size-full wp-image-1748 aligncenter" src="https://galeascience.files.wordpress.com/2016/05/lm_age.png" alt="lm_age" width="1536" height="1195" />
+
+Seaborn has produced a line of best fit that confirms our previous observation. We can make analogous plots for our other features.
+
+<img class=" size-full wp-image-1749 aligncenter" src="https://galeascience.files.wordpress.com/2016/05/lm_alcohol.png" alt="lm_alcohol" width="1536" height="1195" /><img class=" size-full wp-image-1750 aligncenter" src="https://galeascience.files.wordpress.com/2016/05/lm_tobacco.png" alt="lm_tobacco" width="1536" height="1195" />
+
+I was surprised to see that alcohol seems to be more a more influential factor in esophagus cancer than tobacco!
+
+&nbsp;
+<h2>Multivariate regression</h2>
+We can build a model to predict the likelihood of positive diagnosis depending on multiple features. In general this will be a hyperplane with the equation
+<p style="text-align: center;">$latex y = m_0 + \sum_i m_i x_i $</p>
+where $latex m_0$ is the intercept and the other $latex m$'s are the slopes. We have three independent variables:
+<ul>
+	<li>alcohol consumption</li>
+	<li>tobacco consumption</li>
+	<li>age</li>
+</ul>
+<h3>Two feature models</h3>
+For illustration purposes, let's build a two-feature model where $latex x_1 =$ 'alcohol consumption' and $latex x_2 =$ 'tobacco consumption'. We'll use the ordinary least squares regression class of statsmodels.
+
+[code language="python"]
+from statsmodels.formula.api import ols
+
+reg = ols('positive_frac ~ alcgp + tobgp', df).fit()
+reg.params
+[/code]
+<blockquote>Intercept -0.173821
+alcgp         0.176903
+tobgp        0.035869
+dtype: float64</blockquote>
+In this case we'll be able to plot the resulting hyperplane because it's just a regular (i.e., 2D) plane. In the figures below I've done just that. The data is also plotted where the point size is determined by how many people were in the group, so a larger point represents a more statistically significant data-point [1].
+
+<img class=" size-full wp-image-1753 aligncenter" src="https://galeascience.files.wordpress.com/2016/05/two_feature_model_3d_1.png" alt="two_feature_model_3d_1" width="1591" height="1591" /><img class=" size-full wp-image-1754 aligncenter" src="https://galeascience.files.wordpress.com/2016/05/two_feature_model_3d_2.png" alt="two_feature_model_3d_2" width="1954" height="1591" /><img class=" size-full wp-image-1755 aligncenter" src="https://galeascience.files.wordpress.com/2016/05/two_feature_model_3d_3.png" alt="two_feature_model_3d_3" width="1591" height="1591" />
+
+This model was fit with an intercept (i.e., a non-zero value for $latex m_0$). We can remove this by doing the following:
+
+[code language="python"]
+reg = ols('positive_frac ~ alcgp + tobgp -1', df).fit()
+reg.params
+[/code]
+<blockquote>alcgp  0.144220
+tobgp 0.003582
+dtype: float64</blockquote>
+Notice that the $latex m_1$ and $latex m_2$ parameters have changed because the plane was re-fit with $latex m_0 = 0$. The hyperplane looks similar but is less slanted along the 'Tobacco consumption' axes.
+
+<img class=" size-full wp-image-1756 aligncenter" src="https://galeascience.files.wordpress.com/2016/05/two_feature_model_no_int_3d_2.png" alt="two_feature_model_no_int_3d_2" width="1954" height="1591" />
+
+&nbsp;
+
+Let's compare predictions for the following combination of features:
+<ul>
+	<li>alcohol =&gt; group 3 (80-119 g/day)</li>
+	<li>tobacco =&gt; group 4 (130+ g/day)</li>
+</ul>
+With the intercept we predict 50% positive diagnoses and without we predict ~45% [2].
+<h3>Three feature models</h3>
+The previous predictions did not account in any way for the age groups, and we have already seen from the single-feature models that it's correlated to being positively diagnosed. We can include it like this:
+
+[code language="python"]
+reg = ols('positive_frac ~ alcgp + tobgp + Age_group_i',
+          df).fit()
+reg.params
+[/code]
+<blockquote>Intercept       -0.615799
+alcgp                0.180166
+tobgp               0.047964
+Age_group_i 0.119547
+dtype: float64</blockquote>
+It's not practical to try and visualize the hyperplane in this case. The intercept can be removed the same way as before:
+
+[code language="python"]
+reg = ols('positive_frac ~ alcgp + tobgp + Age_group_i -1',
+          df).fit()
+reg.params
+[/code]
+<blockquote>alcgp                0.099652
+tobgp               -0.035494
+Age_group_i 0.066731
+dtype: float64</blockquote>
+Wait, the coefficient for tobacco consumption $latex m_2=-0.035$ is negative? This means that a higher tobacco intake implies <em>lower</em> risk according to the zero-intercept model!
+
+Now we can re-visit the test case from earlier and make predictions for each age group. We see a large variation depending on whether or not the intercept parameter $latex m_0$ is fit.
+
+<img class="aligncenter size-medium wp-image-1744" src="https://galeascience.files.wordpress.com/2016/05/3_feature_models.png?w=600" alt="3_feature_models" width="300" height="219" />
+
+To give some indication as to the significance and accuracy of the three-feature models we can look at the residual plots.
+<h3>Plotting the residuals</h3>
+The linear models we've seen have been fit by minimizing the sum of the squared residuals $latex S$, defined as:
+<p style="text-align: center;">$latex S = \sum_i r_i^2 = \sum_i \big[ \hat{y}_i - (m_0 + \sum_j m_j x_j) \big]^2$,</p>
+where $latex \hat{y}_i$ are the actual values we are trying to predict (i.e., the "positive_frac" column of our dataframe).
+
+Below we plot $latex r_i$ as a function of predictions $latex y_i = m_0 + m_1 x_{1,i} + m_2 x_{2,i} + m_3 x_{3,i}$. For the model where $latex m_0=0$ we get:
+
+<img class=" size-full wp-image-1752 aligncenter" src="https://galeascience.files.wordpress.com/2016/05/three_variable_model_no_int_residuals.png" alt="three_variable_model_no_int_residuals" width="1645" height="1230" />
+
+Whereas for the model with a fitted intercept we find a slightly tighter distribution (which can be confirmed, as I have done, by comparing the R-squared fit values for each model):
+
+<img class=" size-full wp-image-1751 aligncenter" src="https://galeascience.files.wordpress.com/2016/05/three_variable_model_int_residuals.png" alt="three_variable_model_int_residuals" width="1667" height="1230" />
+
+But a close look at the x-axis values reveals that we are predicting positive diagnosis fractions $latex y_i$ to be negative in some cases, which makes no sense! This doesn't mean the model won't give more accurate predictions for the majority of age/alcohol/tobacco combinations, but it is worth noting!
+
+As mentioned above, the full code used to make this post can be found in <a href="https://github.com/agalea91/esoph_linear_model/blob/master/esoph_linear_model.ipynb">my ipython notebook</a>.
+
+Thanks for reading! If you would like to discuss my code or have any questions or corrections, please write a comment. You are also welcome to email me at agalea91@gmail.com or tweet me @agalea91
+
+[1] – In this post I did not do weighted regression, as may be suggested by having different sizes data-points.
+
+[2] - Please don't think this means you have a ~1/2 chance of being diagnosed positive yourself if you fit into this category! We are simply modeling a study.
